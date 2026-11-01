@@ -2,6 +2,8 @@
 
 Local-first Python application for processing PDF invoices, reviewing extracted data, storing results in SQLite, and producing business analytics.
 
+![Invoice Intelligence demo](demo.png)
+
 Designed for **Greek-first** invoice extraction (ΑΦΜ, τιμολόγιο, ΦΠΑ) with English fallbacks, and **sales-first** KPIs (revenue, receivables, collection). Purchase invoices are stored and filterable but do not mix into revenue KPIs.
 
 ## Features
