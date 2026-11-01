@@ -1,0 +1,591 @@
+{% extends "base.html" %}
+{% block title %}Review #{{ invoice.id }} — Invoice Intelligence{% endblock %}
+{% block body_class %}page-review{% endblock %}
+{% block content %}
+<div class="hero">
+  <h2>Invoice review</h2>
+  <p>Correct extracted fields. Approval is blocked until required fields are complete. Customer and supplier must be different.</p>
+</div>
+
+<form id="bulk-queue-form" method="post" action="{{ url_for('review', invoice_id=invoice.id) }}"></form>
+<form method="post" id="invoice-form" action="{{ url_for('review', invoice_id=invoice.id) }}" data-current-id="{{ invoice.id }}">
+  <div class="card" style="position:sticky;top:0.5rem;z-index:20;box-shadow:0 6px 20px rgba(15,23,42,0.08)">
+    <div class="queue-panels">
+      <div class="queue-panel">
+        <div class="queue-panel-head">Pending approval <span class="queue-count">{{ pending_queue|length }}</span></div>
+        {% if pending_queue %}
+        <div class="queue-summary">
+          <span class="queue-chip clean" title="Ready to approve with no low-confidence fields">{{ pending_clean_count }} without issues</span>
+          <span class="queue-chip error" title="Drafts with validation errors or approval blockers">{{ pending_error_count }} error{{ 's' if pending_error_count != 1 else '' }}</span>
+          <span class="queue-chip low" title="Drafts with low-confidence extracted fields">{{ pending_low_count }} low confidence</span>
+        </div>
+        <div class="queue-select-bar">
+          <label class="queue-select-all"><input type="checkbox" id="select-all-pending"/> Select all</label>
+          <button type="button" class="linkish" id="select-clean-pending">Select without issues</button>
+          <span class="muted" id="selected-count">0 selected</span>
+        </div>
+        <ul class="queue-list">
+          {% for inv in pending_queue %}
+          {% set flags = pending_flags[loop.index0] %}
+          <li class="queue-row">
+            <label class="queue-check" title="Select for bulk approve">
+              <input
+                type="checkbox"
+                name="selected_ids"
+                value="{{ inv.id }}"
+                form="bulk-queue-form"
+                data-clean="{{ '1' if flags.is_clean else '0' }}"
+                class="pending-check"
+              />
+            </label>
+            <a
+              class="queue-item js-queue-nav{% if inv.id == invoice.id %} active{% endif %}{% if flags.has_error %} has-error{% elif flags.has_low %} has-low{% elif flags.is_clean %} is-clean{% endif %}"
+              href="{{ url_for('review', invoice_id=inv.id) }}"
+              data-invoice-id="{{ inv.id }}"
+              data-review-url="{{ url_for('review', invoice_id=inv.id) }}"
+              data-data-url="{{ url_for('review_data', invoice_id=inv.id) }}"
+            >
+              <span class="queue-item-title">
+                #{{ inv.id }} · {{ inv.invoice_number or '—' }}
+                {% if flags.is_clean %}<span class="queue-tag clean">ok</span>{% endif %}
+                {% if flags.has_error %}<span class="queue-tag error">{{ flags.error_count }} err</span>{% endif %}
+                {% if flags.has_low %}<span class="queue-tag low">{{ flags.low_count }} low</span>{% endif %}
+              </span>
+              <span class="queue-item-meta">{{ inv.customer_name or inv.supplier_name or inv.document_filename or '—' }}{% if inv.issue_date %} · {{ inv.issue_date|datefmt }}{% endif %}</span>
+            </a>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="muted queue-empty">No invoices pending approval.</p>
+        {% endif %}
+      </div>
+      <div class="queue-panel">
+        <div class="queue-panel-head">Approved <span class="queue-count">{{ approved_queue|length }}</span></div>
+        {% if approved_queue %}
+        <ul class="queue-list">
+          {% for inv in approved_queue %}
+          <li>
+            <a
+              class="queue-item js-queue-nav{% if inv.id == invoice.id %} active{% endif %}"
+              href="{{ url_for('review', invoice_id=inv.id) }}"
+              data-invoice-id="{{ inv.id }}"
+              data-review-url="{{ url_for('review', invoice_id=inv.id) }}"
+              data-data-url="{{ url_for('review_data', invoice_id=inv.id) }}"
+            >
+              <span class="queue-item-title">#{{ inv.id }} · {{ inv.invoice_number or '—' }}</span>
+              <span class="queue-item-meta">{{ inv.customer_name or inv.supplier_name or inv.document_filename or '—' }}{% if inv.issue_date %} · {{ inv.issue_date|datefmt }}{% endif %}</span>
+            </a>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="muted queue-empty">No approved invoices yet.</p>
+        {% endif %}
+      </div>
+      <div class="queue-status" id="queue-status">
+        {% if readiness.can_approve %}
+          <p style="color:var(--ok);font-weight:600;margin:0 0 0.4rem">Ready to approve</p>
+        {% else %}
+          <p style="color:var(--err);font-weight:600;margin:0 0 0.4rem">Blocked — fix checklist below</p>
+        {% endif %}
+      </div>
+    </div>
+    <div class="btn-row" style="margin-top:0.75rem">
+      <button class="btn secondary" type="submit" name="action" value="save">Save draft</button>
+      <button class="btn" type="submit" name="action" value="approve" id="approve-btn" {% if not readiness.can_approve %}disabled title="{{ readiness.blockers|join('; ') }}"{% endif %}>Approve</button>
+      <button class="btn secondary" type="submit" name="action" value="reject">Reject</button>
+      <button class="btn danger" type="submit" name="action" value="delete" onclick="return confirm('Delete this invoice?')">Delete</button>
+      <button
+        class="btn"
+        type="submit"
+        form="bulk-queue-form"
+        name="action"
+        value="approve_selected"
+        id="approve-selected-btn"
+        onclick="return confirm('Approve the selected drafts that pass the checklist? Ones that fail will be skipped.')"
+        title="Approve checked invoices in the pending list"
+        disabled
+      >Approve selected</button>
+      <button
+        class="btn"
+        type="submit"
+        form="bulk-queue-form"
+        name="action"
+        value="approve_without_issues"
+        onclick="return confirm('Approve all {{ pending_clean_count }} draft(s) with no errors and no low-confidence fields?')"
+        title="Auto-approve every pending invoice that has no issues"
+        {% if not pending_clean_count %}disabled{% endif %}
+      >Approve all without issues ({{ pending_clean_count }})</button>
+    </div>
+  </div>
+
+  <div id="review-detail">
+  <div class="card" id="checklist-card">
+    <h3>Approval checklist</h3>
+    <div id="checklist-body">
+    {% if readiness.can_approve %}
+      <p style="color:var(--ok);font-weight:600">Ready to approve</p>
+    {% else %}
+      <ul class="checklist">
+        {% for b in readiness.blockers %}<li class="block">{{ b }}</li>{% endfor %}
+      </ul>
+    {% endif %}
+    {% if readiness.warnings %}
+      <ul class="checklist">
+        {% for w in readiness.warnings %}<li class="warn">{{ w }}</li>{% endfor %}
+      </ul>
+    {% endif %}
+    <table>
+      <thead><tr><th>Field</th><th>Required</th><th>Status</th><th>Confidence</th></tr></thead>
+      <tbody id="checklist-fields">
+        {% for f in readiness.fields %}
+        <tr>
+          <td>{{ f.label }}</td>
+          <td>{{ 'yes' if f.required else 'no' }}</td>
+          <td>{% if not f.present and f.required %}<span style="color:var(--err)">missing</span>{% elif not f.present %}—{% elif f.low_confidence %}<span style="color:var(--low)">present (low confidence)</span>{% else %}ok{% endif %}</td>
+          <td>{% if f.confidence is not none %}{{ '%.0f'|format(f.confidence * 100) }}%{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="card" id="validation-card" {% if not validation.issues %}hidden{% endif %}>
+    <h3>Validation</h3>
+    <div id="validation-body">
+    {% for issue in validation.issues %}
+    <div class="issue {{ issue.severity }}"><strong>{{ issue.severity }}</strong> — {{ issue.message }}</div>
+    {% endfor %}
+    </div>
+  </div>
+
+  <div class="review-layout">
+    <div class="card">
+      <h3>Editable fields</h3>
+      <p class="muted">Red = required missing. Amber = low extraction confidence. Use the text preview or PDF to fill gaps.</p>
+      <div class="form-grid" id="editable-fields">
+        <div class="field {{ field_meta.get('invoice_number', {}).get('css','') }}" data-field="invoice_number">
+          <label>Invoice number *</label>
+          <input type="text" name="invoice_number" value="{{ invoice.invoice_number or '' }}"/>
+        </div>
+        <div class="field" data-field="invoice_type">
+          <label>Invoice type</label>
+          <select name="invoice_type">
+            {% for t in invoice_types %}<option value="{{ t }}" {% if invoice.invoice_type==t %}selected{% endif %}>{{ t }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="field {{ field_meta.get('document_direction', {}).get('css','') }}" data-field="document_direction">
+          <label>Document direction *</label>
+          <select name="document_direction">
+            {% for t in directions %}<option value="{{ t }}" {% if invoice.document_direction==t %}selected{% endif %}>{{ t }}</option>{% endfor %}
+          </select>
+          <div class="flag missing" {% if field_meta.get('document_direction', {}).get('css')!='missing' %}hidden{% endif %}>Set to sales or purchase</div>
+        </div>
+        <div class="field {{ field_meta.get('issue_date', {}).get('css','') }}" data-field="issue_date">
+          <label>Issue date *</label>
+          <input type="text" name="issue_date" value="{{ invoice.issue_date|datefmt }}" placeholder="dd/mm/yyyy" inputmode="numeric" autocomplete="off"/>
+        </div>
+        <div class="field" data-field="due_date">
+          <label>Due date</label>
+          <input type="text" name="due_date" value="{{ invoice.due_date|datefmt }}" placeholder="dd/mm/yyyy" inputmode="numeric" autocomplete="off"/>
+          <label style="margin-top:0.35rem"><input type="checkbox" name="clear_due" {% if not invoice.due_date %}checked{% endif %}/> Clear due date</label>
+        </div>
+        <div class="field {{ field_meta.get('currency', {}).get('css','') }}" data-field="currency">
+          <label>Currency *</label>
+          <input type="text" name="currency" value="{{ invoice.currency or 'EUR' }}"/>
+        </div>
+        <div class="field {{ field_meta.get('customer_name', {}).get('css','') }}" data-field="customer_name">
+          <label data-required-star="customer">Customer name{% if field_meta.get('customer_name', {}).get('required') %} *{% endif %}</label>
+          <input type="text" name="customer_name" value="{{ invoice.customer_name or '' }}"/>
+          <div class="flag missing" {% if field_meta.get('customer_name', {}).get('css')!='missing' %}hidden{% endif %}>Required for sales approval</div>
+        </div>
+        <div class="field {{ field_meta.get('customer_vat', {}).get('css','') }}" data-field="customer_vat">
+          <label>Customer VAT / ΑΦΜ</label>
+          <input type="text" name="customer_vat" value="{{ invoice.customer_vat or '' }}"/>
+        </div>
+        <div class="field {{ field_meta.get('supplier_name', {}).get('css','') }}" data-field="supplier_name">
+          <label data-required-star="supplier">Supplier name{% if field_meta.get('supplier_name', {}).get('required') %} *{% endif %}</label>
+          <input type="text" name="supplier_name" value="{{ invoice.supplier_name or '' }}"/>
+        </div>
+        <div class="field {{ field_meta.get('supplier_vat', {}).get('css','') }}" data-field="supplier_vat">
+          <label>Supplier VAT / ΑΦΜ</label>
+          <input type="text" name="supplier_vat" value="{{ invoice.supplier_vat or '' }}"/>
+        </div>
+        <div class="field {{ field_meta.get('net_amount', {}).get('css','') }}" data-field="net_amount">
+          <label>Net amount</label>
+          <input type="text" name="net_amount" value="{{ invoice.net_amount if invoice.net_amount is not none else '' }}"/>
+        </div>
+        <div class="field {{ field_meta.get('vat_amount', {}).get('css','') }}" data-field="vat_amount">
+          <label>VAT amount</label>
+          <input type="text" name="vat_amount" value="{{ invoice.vat_amount if invoice.vat_amount is not none else '' }}"/>
+        </div>
+        <div class="field {{ field_meta.get('gross_amount', {}).get('css','') }}" data-field="gross_amount">
+          <label>Gross amount *</label>
+          <input type="text" name="gross_amount" value="{{ invoice.gross_amount if invoice.gross_amount is not none else '' }}"/>
+        </div>
+        <div class="field" data-field="total_payable">
+          <label>Total payable</label>
+          <input type="text" name="total_payable" value="{{ invoice.total_payable if invoice.total_payable is not none else '' }}"/>
+        </div>
+        <div class="field" data-field="discount_amount">
+          <label>Discount</label>
+          <input type="text" name="discount_amount" value="{{ invoice.discount_amount if invoice.discount_amount is not none else '' }}"/>
+        </div>
+        <div class="field" data-field="other_charges">
+          <label>Other charges</label>
+          <input type="text" name="other_charges" value="{{ invoice.other_charges if invoice.other_charges is not none else '' }}"/>
+        </div>
+        <div class="field" data-field="withholding_tax">
+          <label>Withholding tax</label>
+          <input type="text" name="withholding_tax" value="{{ invoice.withholding_tax if invoice.withholding_tax is not none else '' }}"/>
+        </div>
+        <div class="field" data-field="amount_paid">
+          <label>Amount paid</label>
+          <input type="text" name="amount_paid" value="{{ invoice.amount_paid if invoice.amount_paid is not none else '0' }}"/>
+        </div>
+        <div class="field" data-field="payment_status">
+          <label>Payment status</label>
+          <select name="payment_status">
+            {% for t in payment_statuses %}<option value="{{ t }}" {% if invoice.payment_status==t %}selected{% endif %}>{{ t }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="field" data-field="payment_method">
+          <label>Payment method</label>
+          <input type="text" name="payment_method" value="{{ invoice.payment_method or '' }}"/>
+        </div>
+      </div>
+      <div class="field" style="margin-top:0.75rem" data-field="description">
+        <label>Description</label>
+        <textarea name="description" rows="3">{{ invoice.description or '' }}</textarea>
+      </div>
+    </div>
+
+    <div>
+      <div class="card pdf-card" id="pdf-card">
+        <h3>Original PDF</h3>
+        <div id="pdf-body">
+        {% if invoice.original_pdf_path %}
+          <p class="muted" id="pdf-path">{{ invoice.original_pdf_path }}</p>
+          <a class="btn secondary" id="pdf-open" href="{{ url_for('invoice_pdf', invoice_id=invoice.id) }}" target="_blank">Open / download PDF</a>
+          <iframe class="pdf-frame" id="pdf-frame" style="margin-top:0.75rem" src="{{ url_for('invoice_pdf', invoice_id=invoice.id) }}"></iframe>
+        {% else %}
+          <p class="muted" id="pdf-missing">No PDF path stored.</p>
+        {% endif %}
+        </div>
+      </div>
+      <div class="card" id="text-preview-card" {% if not invoice.extracted_text_preview %}hidden{% endif %}>
+        <h3>Extracted text</h3>
+        <p class="muted">Copy missing values from here if needed.</p>
+        <pre class="text-preview" id="text-preview">{{ invoice.extracted_text_preview or '' }}</pre>
+      </div>
+    </div>
+  </div>
+  </div>
+</form>
+
+<div class="card" id="payment-card">
+  <h3>Add payment</h3>
+  <p class="muted">Optional override. Imports are marked paid by default.</p>
+  <form method="post" id="payment-form" action="{{ url_for('review', invoice_id=invoice.id) }}">
+    <input type="hidden" name="action" value="add_payment"/>
+    <div class="form-grid">
+      <div><label>Amount</label><input type="text" name="pay_amount"/></div>
+      <div><label>Date</label><input type="text" name="pay_date" value="{{ today }}" placeholder="dd/mm/yyyy" inputmode="numeric" autocomplete="off"/></div>
+      <div><label>Method</label><input type="text" name="pay_method"/></div>
+    </div>
+    <div class="btn-row"><button class="btn secondary" type="submit">Record payment</button></div>
+  </form>
+  <div id="payments-table-wrap">
+  {% if invoice.payments %}
+  <table style="margin-top:0.75rem" id="payments-table">
+    <thead><tr><th>ID</th><th>Amount</th><th>Date</th><th>Method</th></tr></thead>
+    <tbody>
+      {% for p in invoice.payments %}
+      <tr><td>{{ p.id }}</td><td>{{ p.amount }}</td><td>{{ p.payment_date|datefmt or '—' }}</td><td>{{ p.payment_method or '—' }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const form = document.getElementById('invoice-form');
+  const detail = document.getElementById('review-detail');
+  if (!form || !detail) return;
+
+  let loading = false;
+  let loadToken = 0;
+
+  function parseAmount(raw) {
+    if (raw == null) return null;
+    let s = String(raw).trim().replace(/[€$£\s]/g, '');
+    if (!s) return null;
+    if (s.includes(',') && s.includes('.')) {
+      if (s.lastIndexOf(',') > s.lastIndexOf('.')) s = s.replace(/\./g, '').replace(',', '.');
+      else s = s.replace(/,/g, '');
+    } else if (s.includes(',')) {
+      s = s.replace(',', '.');
+    }
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function fmt(n) {
+    return (Math.round(n * 100) / 100).toFixed(2);
+  }
+
+  function syncGross() {
+    const netEl = form.querySelector('input[name="net_amount"]');
+    const vatEl = form.querySelector('input[name="vat_amount"]');
+    const grossEl = form.querySelector('input[name="gross_amount"]');
+    const payableEl = form.querySelector('input[name="total_payable"]');
+    if (!netEl || !vatEl || !grossEl) return;
+    const net = parseAmount(netEl.value);
+    const vat = parseAmount(vatEl.value);
+    if (net == null || vat == null) return;
+    const expected = net + vat;
+    const gross = parseAmount(grossEl.value);
+    if (gross == null || Math.abs(gross - expected) > 0.02) {
+      grossEl.value = fmt(expected);
+    }
+    if (payableEl && !parseAmount(payableEl.value)) {
+      payableEl.value = fmt(expected);
+    }
+  }
+
+  form.addEventListener('input', (e) => {
+    if (e.target && (e.target.name === 'net_amount' || e.target.name === 'vat_amount')) syncGross();
+  });
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function setFieldValue(name, value) {
+    const el = form.querySelector(`[name="${name}"]`);
+    if (!el) return;
+    if (el.type === 'checkbox') {
+      el.checked = !!value;
+      return;
+    }
+    el.value = value == null ? '' : value;
+  }
+
+  function applyFieldMeta(meta) {
+    Object.keys(meta || {}).forEach((key) => {
+      const wrap = form.querySelector(`.field[data-field="${key}"]`);
+      if (!wrap) return;
+      wrap.classList.remove('missing', 'low');
+      const css = meta[key].css || '';
+      if (css) wrap.classList.add(css);
+      const flag = wrap.querySelector('.flag.missing');
+      if (flag) flag.hidden = css !== 'missing';
+    });
+    const cust = form.querySelector('label[data-required-star="customer"]');
+    if (cust) cust.textContent = 'Customer name' + (meta.customer_name && meta.customer_name.required ? ' *' : '');
+    const supp = form.querySelector('label[data-required-star="supplier"]');
+    if (supp) supp.textContent = 'Supplier name' + (meta.supplier_name && meta.supplier_name.required ? ' *' : '');
+  }
+
+  function renderChecklist(readiness) {
+    const body = document.getElementById('checklist-body');
+    const status = document.getElementById('queue-status');
+    const approveBtn = document.getElementById('approve-btn');
+    if (!body) return;
+    let html = '';
+    if (readiness.can_approve) {
+      html += '<p style="color:var(--ok);font-weight:600">Ready to approve</p>';
+    } else {
+      html += '<ul class="checklist">' + (readiness.blockers || []).map((b) => `<li class="block">${esc(b)}</li>`).join('') + '</ul>';
+    }
+    if (readiness.warnings && readiness.warnings.length) {
+      html += '<ul class="checklist">' + readiness.warnings.map((w) => `<li class="warn">${esc(w)}</li>`).join('') + '</ul>';
+    }
+    html += '<table><thead><tr><th>Field</th><th>Required</th><th>Status</th><th>Confidence</th></tr></thead><tbody>';
+    (readiness.fields || []).forEach((f) => {
+      let statusCell = 'ok';
+      if (!f.present && f.required) statusCell = '<span style="color:var(--err)">missing</span>';
+      else if (!f.present) statusCell = '—';
+      else if (f.low_confidence) statusCell = '<span style="color:var(--low)">present (low confidence)</span>';
+      const conf = f.confidence == null ? '—' : Math.round(f.confidence * 100) + '%';
+      html += `<tr><td>${esc(f.label)}</td><td>${f.required ? 'yes' : 'no'}</td><td>${statusCell}</td><td>${conf}</td></tr>`;
+    });
+    html += '</tbody></table>';
+    body.innerHTML = html;
+    if (status) {
+      status.innerHTML = readiness.can_approve
+        ? '<p style="color:var(--ok);font-weight:600;margin:0 0 0.4rem">Ready to approve</p>'
+        : '<p style="color:var(--err);font-weight:600;margin:0 0 0.4rem">Blocked — fix checklist below</p>';
+    }
+    if (approveBtn) {
+      approveBtn.disabled = !readiness.can_approve;
+      approveBtn.title = readiness.can_approve ? '' : (readiness.blockers || []).join('; ');
+    }
+  }
+
+  function renderValidation(validation) {
+    const card = document.getElementById('validation-card');
+    const body = document.getElementById('validation-body');
+    if (!card || !body) return;
+    const issues = (validation && validation.issues) || [];
+    card.hidden = issues.length === 0;
+    body.innerHTML = issues.map((i) =>
+      `<div class="issue ${esc(i.severity)}"><strong>${esc(i.severity)}</strong> — ${esc(i.message)}</div>`
+    ).join('');
+  }
+
+  function renderPdf(data) {
+    const body = document.getElementById('pdf-body');
+    if (!body) return;
+    if (data.pdf_url) {
+      body.innerHTML =
+        `<p class="muted" id="pdf-path">${esc(data.original_pdf_path || '')}</p>` +
+        `<a class="btn secondary" id="pdf-open" href="${esc(data.pdf_url)}" target="_blank">Open / download PDF</a>` +
+        `<iframe class="pdf-frame" id="pdf-frame" style="margin-top:0.75rem" src="${esc(data.pdf_url)}"></iframe>`;
+    } else {
+      body.innerHTML = '<p class="muted" id="pdf-missing">No PDF path stored.</p>';
+    }
+  }
+
+  function renderTextPreview(text) {
+    const card = document.getElementById('text-preview-card');
+    const pre = document.getElementById('text-preview');
+    if (!card || !pre) return;
+    const value = text || '';
+    card.hidden = !value;
+    pre.textContent = value;
+  }
+
+  function renderPayments(payments) {
+    const wrap = document.getElementById('payments-table-wrap');
+    if (!wrap) return;
+    if (!payments || !payments.length) {
+      wrap.innerHTML = '';
+      return;
+    }
+    wrap.innerHTML =
+      '<table style="margin-top:0.75rem" id="payments-table"><thead><tr><th>ID</th><th>Amount</th><th>Date</th><th>Method</th></tr></thead><tbody>' +
+      payments.map((p) =>
+        `<tr><td>${esc(p.id)}</td><td>${esc(p.amount)}</td><td>${esc(p.payment_date)}</td><td>${esc(p.payment_method)}</td></tr>`
+      ).join('') +
+      '</tbody></table>';
+  }
+
+  function setActiveQueueItem(id) {
+    document.querySelectorAll('.js-queue-nav').forEach((a) => {
+      a.classList.toggle('active', String(a.dataset.invoiceId) === String(id));
+    });
+  }
+
+  function applyPayload(data, { push } = { push: true }) {
+    const fields = data.fields || {};
+    Object.keys(fields).forEach((name) => {
+      if (name === 'clear_due') setFieldValue(name, fields[name]);
+      else setFieldValue(name, fields[name]);
+    });
+    applyFieldMeta(data.field_meta || {});
+    renderChecklist(data.readiness || {});
+    renderValidation(data.validation || {});
+    renderPdf(data);
+    renderTextPreview(data.extracted_text_preview);
+    renderPayments(data.payments || []);
+    syncGross();
+
+    form.action = data.url;
+    form.dataset.currentId = String(data.id);
+    const bulk = document.getElementById('bulk-queue-form');
+    if (bulk) bulk.action = data.url;
+    const payForm = document.getElementById('payment-form');
+    if (payForm) payForm.action = data.url;
+    document.title = data.title || document.title;
+    setActiveQueueItem(data.id);
+    if (push) history.pushState({ invoiceId: data.id }, data.title || '', data.url);
+  }
+
+  async function loadInvoice(dataUrl, reviewUrl, { push } = { push: true }) {
+    if (loading) return;
+    loading = true;
+    const token = ++loadToken;
+    detail.classList.add('review-loading');
+    try {
+      const res = await fetch(dataUrl, { headers: { Accept: 'application/json' } });
+      if (!res.ok) throw new Error('Failed to load invoice');
+      const data = await res.json();
+      if (token !== loadToken) return;
+      applyPayload(data, { push });
+    } catch (err) {
+      console.error(err);
+      window.location.href = reviewUrl;
+    } finally {
+      if (token === loadToken) {
+        detail.classList.remove('review-loading');
+        loading = false;
+      }
+    }
+  }
+
+  document.querySelectorAll('.js-queue-nav').forEach((a) => {
+    a.addEventListener('click', (e) => {
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+      e.preventDefault();
+      const id = a.dataset.invoiceId;
+      if (String(form.dataset.currentId) === String(id)) return;
+      loadInvoice(a.dataset.dataUrl, a.dataset.reviewUrl, { push: true });
+    });
+  });
+
+  window.addEventListener('popstate', (e) => {
+    const id = e.state && e.state.invoiceId;
+    if (!id) return;
+    const link = document.querySelector(`.js-queue-nav[data-invoice-id="${id}"]`);
+    if (link) loadInvoice(link.dataset.dataUrl, link.dataset.reviewUrl, { push: false });
+  });
+
+  history.replaceState({ invoiceId: Number(form.dataset.currentId) }, document.title, window.location.href);
+  syncGross();
+})();
+
+(function () {
+  const checks = Array.from(document.querySelectorAll('.pending-check'));
+  const selectAll = document.getElementById('select-all-pending');
+  const selectClean = document.getElementById('select-clean-pending');
+  const countEl = document.getElementById('selected-count');
+  const approveBtn = document.getElementById('approve-selected-btn');
+  if (!checks.length) return;
+
+  function refresh() {
+    const n = checks.filter((c) => c.checked).length;
+    if (countEl) countEl.textContent = n + ' selected';
+    if (approveBtn) approveBtn.disabled = n === 0;
+    if (selectAll) {
+      selectAll.checked = n > 0 && n === checks.length;
+      selectAll.indeterminate = n > 0 && n < checks.length;
+    }
+  }
+
+  checks.forEach((c) => c.addEventListener('change', refresh));
+  if (selectAll) {
+    selectAll.addEventListener('change', () => {
+      checks.forEach((c) => { c.checked = selectAll.checked; });
+      refresh();
+    });
+  }
+  if (selectClean) {
+    selectClean.addEventListener('click', () => {
+      checks.forEach((c) => { c.checked = c.dataset.clean === '1'; });
+      refresh();
+    });
+  }
+  refresh();
+})();
+</script>
+{% endblock %}

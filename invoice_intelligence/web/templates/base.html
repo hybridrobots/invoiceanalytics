@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>{% block title %}Invoice Intelligence{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"/>
+  {% block head %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+  <div class="layout">
+    <aside class="sidebar">
+      <h1>Invoice Intelligence</h1>
+      <div class="tag">Local analytics · no cloud</div>
+      <nav>
+        <a href="{{ url_for('import_page') }}" class="{% if request.endpoint == 'import_page' %}active{% endif %}">Import</a>
+        <a href="{{ url_for('review') }}" class="{% if request.endpoint and request.endpoint.startswith('review') %}active{% endif %}">
+          Review
+          {% if pending_review_count %}<span class="badge">{{ pending_review_count }}</span>{% endif %}
+        </a>
+        <a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">Dashboard</a>
+        <a href="{{ url_for('settings_page') }}" class="{% if request.endpoint == 'settings_page' %}active{% endif %}">Settings</a>
+      </nav>
+    </aside>
+    <main class="content">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <ul class="flash">
+            {% for category, message in messages %}
+              <li class="{{ category }}">{{ message }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

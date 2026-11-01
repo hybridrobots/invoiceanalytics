@@ -1,0 +1,368 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Invoice Intelligence{% endblock %}
+{% block head %}
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:wght@500;600&display=swap" rel="stylesheet"/>
+{% endblock %}
+{% block content %}
+<div class="dash">
+  <header class="dash-hero">
+    <div class="dash-hero-copy">
+      <p class="dash-eyebrow">Sales analytics</p>
+      <h2>Dashboard</h2>
+      <p class="dash-lead">Approved sales only. Invoiced revenue is not treated as cash.</p>
+    </div>
+    <form class="dash-period" method="get">
+      <input type="hidden" name="tab" id="tab-field" value="{{ active_tab }}"/>
+      <div class="dash-period-fields">
+        <div>
+          <label>From</label>
+          <input type="text" name="start" value="{{ start }}" placeholder="dd/mm/yyyy" inputmode="numeric" autocomplete="off"/>
+        </div>
+        <div>
+          <label>To</label>
+          <input type="text" name="end" value="{{ end }}" placeholder="dd/mm/yyyy" inputmode="numeric" autocomplete="off"/>
+        </div>
+      </div>
+      <button class="btn" type="submit">Apply period</button>
+    </form>
+  </header>
+
+  <div class="dash-strip" aria-label="Period snapshot">
+    <div class="dash-strip-item">
+      <span class="dash-strip-label">Invoiced gross</span>
+      <span class="dash-strip-value">{{ '%.2f'|format(kpis.revenue.total_gross|float) }} <small>{{ currency }}</small></span>
+    </div>
+    <div class="dash-strip-item">
+      <span class="dash-strip-label">Cash collected</span>
+      <span class="dash-strip-value">{{ '%.2f'|format(kpis.cashflow.cash_collected|float) }} <small>{{ currency }}</small></span>
+    </div>
+    <div class="dash-strip-item">
+      <span class="dash-strip-label">Outstanding</span>
+      <span class="dash-strip-value">{{ '%.2f'|format(kpis.cashflow.outstanding_receivables|float) }} <small>{{ currency }}</small></span>
+    </div>
+    <div class="dash-strip-item">
+      <span class="dash-strip-label">Collection rate</span>
+      <span class="dash-strip-value">{% if kpis.cashflow.collection_rate is not none %}{{ kpis.cashflow.collection_rate }}%{% else %}n/a{% endif %}</span>
+    </div>
+  </div>
+
+  <div class="dash-tabs tabs" role="tablist" aria-label="Dashboard sections">
+    <button type="button" class="tab{% if active_tab == 'revenue' %} active{% endif %}" role="tab" data-tab="revenue" aria-selected="{{ 'true' if active_tab == 'revenue' else 'false' }}">Revenue</button>
+    <button type="button" class="tab{% if active_tab == 'cashflow' %} active{% endif %}" role="tab" data-tab="cashflow" aria-selected="{{ 'true' if active_tab == 'cashflow' else 'false' }}">Cashflow</button>
+    <button type="button" class="tab{% if active_tab == 'monthly_revenue' %} active{% endif %}" role="tab" data-tab="monthly_revenue" aria-selected="{{ 'true' if active_tab == 'monthly_revenue' else 'false' }}">Monthly revenue</button>
+    <button type="button" class="tab{% if active_tab == 'monthly_cash' %} active{% endif %}" role="tab" data-tab="monthly_cash" aria-selected="{{ 'true' if active_tab == 'monthly_cash' else 'false' }}">Monthly cash</button>
+    <button type="button" class="tab{% if active_tab == 'customers' %} active{% endif %}" role="tab" data-tab="customers" aria-selected="{{ 'true' if active_tab == 'customers' else 'false' }}">Customers</button>
+    <button type="button" class="tab{% if active_tab == 'insights' %} active{% endif %}" role="tab" data-tab="insights" aria-selected="{{ 'true' if active_tab == 'insights' else 'false' }}">Insights</button>
+  </div>
+
+  <section class="tab-panel dash-panel{% if active_tab == 'revenue' %} active{% endif %}" id="panel-revenue" role="tabpanel" data-panel="revenue" {% if active_tab != 'revenue' %}hidden{% endif %}>
+    <div class="dash-panel-head">
+      <div>
+        <h3>Revenue</h3>
+        <p class="dash-panel-lead">Invoiced totals for approved sales in the selected period.</p>
+      </div>
+      {% if kpis.revenue.growth_vs_previous is not none %}
+      <div class="dash-delta {% if kpis.revenue.growth_vs_previous|float >= 0 %}up{% else %}down{% endif %}">
+        {{ '%+.2f'|format(kpis.revenue.growth_vs_previous|float) }}% vs prior period
+      </div>
+      {% endif %}
+    </div>
+    <div class="dash-kpi-grid">
+      <article class="dash-kpi accent">
+        <div class="dash-kpi-label">Invoiced gross</div>
+        <div class="dash-kpi-value">{{ '%.2f'|format(kpis.revenue.total_gross|float) }} <span>{{ currency }}</span></div>
+        <div class="dash-kpi-hint">Not cash — billed amount</div>
+      </article>
+      <article class="dash-kpi">
+        <div class="dash-kpi-label">Net excl. VAT</div>
+        <div class="dash-kpi-value">{{ '%.2f'|format(kpis.revenue.total_net|float) }} <span>{{ currency }}</span></div>
+      </article>
+      <article class="dash-kpi">
+        <div class="dash-kpi-label">VAT charged</div>
+        <div class="dash-kpi-value">{{ '%.2f'|format(kpis.revenue.total_vat|float) }} <span>{{ currency }}</span></div>
+      </article>
+      <article class="dash-kpi">
+        <div class="dash-kpi-label">Invoices</div>
+        <div class="dash-kpi-value">{{ kpis.revenue.invoice_count }}</div>
+        <div class="dash-kpi-hint">Avg {{ '%.2f'|format(kpis.revenue.average_invoice_value|float) }} {{ currency }}</div>
+      </article>
+    </div>
+  </section>
+
+  <section class="tab-panel dash-panel{% if active_tab == 'cashflow' %} active{% endif %}" id="panel-cashflow" role="tabpanel" data-panel="cashflow" {% if active_tab != 'cashflow' %}hidden{% endif %}>
+    <div class="dash-panel-head">
+      <div>
+        <h3>Cashflow</h3>
+        <p class="dash-panel-lead">Confirmed payments only — receivables stay separate from revenue.</p>
+      </div>
+      <div class="dash-health">{{ kpis.health.collection_performance }}</div>
+    </div>
+    <div class="dash-kpi-grid">
+      <article class="dash-kpi accent-ok">
+        <div class="dash-kpi-label">Cash collected</div>
+        <div class="dash-kpi-value">{{ '%.2f'|format(kpis.cashflow.cash_collected|float) }} <span>{{ currency }}</span></div>
+      </article>
+      <article class="dash-kpi">
+        <div class="dash-kpi-label">Outstanding</div>
+        <div class="dash-kpi-value">{{ '%.2f'|format(kpis.cashflow.outstanding_receivables|float) }} <span>{{ currency }}</span></div>
+        <div class="dash-kpi-hint">{{ kpis.cashflow.partially_paid_count }} partially paid</div>
+      </article>
+      <article class="dash-kpi accent-warn">
+        <div class="dash-kpi-label">Overdue</div>
+        <div class="dash-kpi-value">{{ '%.2f'|format(kpis.cashflow.overdue_receivables|float) }} <span>{{ currency }}</span></div>
+        <div class="dash-kpi-hint">{{ kpis.cashflow.overdue_count }} invoice(s)</div>
+      </article>
+      <article class="dash-kpi">
+        <div class="dash-kpi-label">Collection rate</div>
+        <div class="dash-kpi-value">{% if kpis.cashflow.collection_rate is not none %}{{ kpis.cashflow.collection_rate }}%{% else %}n/a{% endif %}</div>
+        {% if kpis.cashflow.average_collection_days is not none %}
+        <div class="dash-kpi-hint">Avg {{ kpis.cashflow.average_collection_days }} days to collect</div>
+        {% endif %}
+      </article>
+    </div>
+  </section>
+
+  <section class="tab-panel dash-panel{% if active_tab == 'monthly_revenue' %} active{% endif %}" id="panel-monthly_revenue" role="tabpanel" data-panel="monthly_revenue" {% if active_tab != 'monthly_revenue' %}hidden{% endif %}>
+    <div class="dash-panel-head">
+      <div>
+        <h3>Monthly revenue</h3>
+        <p class="dash-panel-lead">Gross invoiced by month for approved sales.</p>
+      </div>
+    </div>
+    <div class="dash-chart-frame">
+      <canvas id="revChart" height="140"></canvas>
+    </div>
+  </section>
+
+  <section class="tab-panel dash-panel{% if active_tab == 'monthly_cash' %} active{% endif %}" id="panel-monthly_cash" role="tabpanel" data-panel="monthly_cash" {% if active_tab != 'monthly_cash' %}hidden{% endif %}>
+    <div class="dash-panel-head">
+      <div>
+        <h3>Monthly cash</h3>
+        <p class="dash-panel-lead">Confirmed collections by payment month.</p>
+      </div>
+    </div>
+    <div class="dash-chart-frame">
+      <canvas id="cashChart" height="140"></canvas>
+    </div>
+  </section>
+
+  <section class="tab-panel dash-panel{% if active_tab == 'customers' %} active{% endif %}" id="panel-customers" role="tabpanel" data-panel="customers" {% if active_tab != 'customers' %}hidden{% endif %}>
+    <div class="dash-panel-head">
+      <div>
+        <h3>Customers</h3>
+        <p class="dash-panel-lead">Revenue concentration across approved sales customers.</p>
+      </div>
+      <div class="dash-risk risk-{{ kpis.health.concentration_risk }}">Risk: {{ kpis.health.concentration_risk }}</div>
+    </div>
+    {% if customers %}
+    <div class="dash-customer-layout">
+      <div class="dash-chart-frame compact">
+        <canvas id="custChart" height="180"></canvas>
+      </div>
+      <div class="dash-table-wrap">
+        <table class="dash-table">
+          <thead><tr><th>Customer</th><th>Revenue</th><th>Share</th></tr></thead>
+          <tbody>
+            {% for c in customers %}
+            <tr>
+              <td>
+                <div class="dash-cust-name">{{ c.name }}</div>
+                <div class="dash-share-bar" aria-hidden="true"><span style="width: {{ c.share if c.share < 100 else 100 }}%"></span></div>
+              </td>
+              <td class="num">{{ '%.2f'|format(c.revenue) }}</td>
+              <td class="num">{{ '%.1f'|format(c.share) }}%</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% if kpis.customers.top_customer_name %}
+        <p class="muted dash-footnote">Top account: <strong>{{ kpis.customers.top_customer_name }}</strong> ({{ kpis.customers.top_customer_share }}%)</p>
+        {% endif %}
+      </div>
+    </div>
+    {% else %}
+    <p class="muted">No approved sales invoices in this period.</p>
+    {% endif %}
+  </section>
+
+  <section class="tab-panel dash-panel{% if active_tab == 'insights' %} active{% endif %}" id="panel-insights" role="tabpanel" data-panel="insights" {% if active_tab != 'insights' %}hidden{% endif %}>
+    <div class="dash-panel-head">
+      <div>
+        <h3>Insights</h3>
+        <p class="dash-panel-lead">Rule-based signals from the current KPI set — no fluff.</p>
+      </div>
+    </div>
+    {% if insights %}
+    <div class="dash-insight-grid">
+      {% for ins in insights %}
+      <article class="dash-insight {{ ins.severity }}">
+        <div class="dash-insight-sev">{{ ins.severity }}</div>
+        <h4>{{ ins.title }}</h4>
+        <p>{{ ins.explanation }}</p>
+        <div class="dash-insight-meta">{{ ins.metric }} · {{ ins.period }}</div>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">No insights yet.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const revLabels = {{ monthly_labels|safe }};
+const revData = {{ monthly_gross|safe }};
+const cashLabels = {{ monthly_cash_labels|safe }};
+const cashData = {{ monthly_cash|safe }};
+const custLabels = {{ customer_labels|safe }};
+const custShares = {{ customer_shares|safe }};
+
+const chartDefaults = {
+  color: '#64748b',
+  borderColor: '#d8e0ea',
+  font: { family: "'IBM Plex Sans', sans-serif", size: 11 }
+};
+Chart.defaults.font.family = chartDefaults.font.family;
+Chart.defaults.color = chartDefaults.color;
+
+let revChart = null;
+let cashChart = null;
+let custChart = null;
+
+function gradientFill(ctx, top, bottom) {
+  const g = ctx.createLinearGradient(0, 0, 0, ctx.canvas.height || 280);
+  g.addColorStop(0, top);
+  g.addColorStop(1, bottom);
+  return g;
+}
+
+function ensureRevChart() {
+  const el = document.getElementById('revChart');
+  if (!el) return;
+  if (revChart) { revChart.resize(); return; }
+  const ctx = el.getContext('2d');
+  revChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: revLabels,
+      datasets: [{
+        label: 'Gross',
+        data: revData,
+        backgroundColor: gradientFill(ctx, 'rgba(11,61,92,0.92)', 'rgba(30,95,138,0.55)'),
+        borderRadius: 6,
+        borderSkipped: false,
+        maxBarThickness: 42
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { backgroundColor: '#0f172a', padding: 10, cornerRadius: 8 } },
+      scales: {
+        x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkipPadding: 8 } },
+        y: { beginAtZero: true, grid: { color: 'rgba(216,224,234,0.7)' }, border: { display: false } }
+      }
+    }
+  });
+}
+
+function ensureCashChart() {
+  const el = document.getElementById('cashChart');
+  if (!el) return;
+  if (cashChart) { cashChart.resize(); return; }
+  const ctx = el.getContext('2d');
+  cashChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: cashLabels,
+      datasets: [{
+        label: 'Cash',
+        data: cashData,
+        borderColor: '#16803c',
+        backgroundColor: gradientFill(ctx, 'rgba(22,128,60,0.28)', 'rgba(22,128,60,0.02)'),
+        tension: 0.35,
+        fill: true,
+        pointRadius: 3,
+        pointHoverRadius: 5,
+        pointBackgroundColor: '#16803c',
+        borderWidth: 2.5
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { backgroundColor: '#0f172a', padding: 10, cornerRadius: 8 } },
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true, grid: { color: 'rgba(216,224,234,0.7)' }, border: { display: false } }
+      }
+    }
+  });
+}
+
+function ensureCustChart() {
+  const el = document.getElementById('custChart');
+  if (!el || !custLabels.length) return;
+  if (custChart) { custChart.resize(); return; }
+  const palette = ['#0b3d5c','#1e5f8a','#2f7aa8','#4a90b8','#6aa6c4','#8bbad0','#0f766e','#347d6a','#475569','#64748b','#94a3b8','#cbd5e1'];
+  custChart = new Chart(el, {
+    type: 'doughnut',
+    data: {
+      labels: custLabels,
+      datasets: [{
+        data: custShares,
+        backgroundColor: custLabels.map((_, i) => palette[i % palette.length]),
+        borderWidth: 2,
+        borderColor: '#fff',
+        hoverOffset: 6
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '62%',
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 10, padding: 12, font: { size: 11 } } },
+        tooltip: {
+          backgroundColor: '#0f172a',
+          padding: 10,
+          cornerRadius: 8,
+          callbacks: { label: (c) => ` ${c.label}: ${Number(c.raw).toFixed(1)}%` }
+        }
+      }
+    }
+  });
+}
+
+function activateTab(name) {
+  document.querySelectorAll('.dash-tabs .tab').forEach((btn) => {
+    const on = btn.dataset.tab === name;
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  document.querySelectorAll('.tab-panel').forEach((panel) => {
+    const on = panel.dataset.panel === name;
+    panel.classList.toggle('active', on);
+    panel.hidden = !on;
+  });
+  const field = document.getElementById('tab-field');
+  if (field) field.value = name;
+  const url = new URL(window.location.href);
+  url.searchParams.set('tab', name);
+  history.replaceState(null, '', url);
+  if (name === 'monthly_revenue') ensureRevChart();
+  if (name === 'monthly_cash') ensureCashChart();
+  if (name === 'customers') ensureCustChart();
+}
+
+document.querySelectorAll('.dash-tabs .tab').forEach((btn) => {
+  btn.addEventListener('click', () => activateTab(btn.dataset.tab));
+});
+
+activateTab({{ active_tab|tojson }});
+</script>
+{% endblock %}

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Settings — Invoice Intelligence{% endblock %}
+{% block content %}
+<div class="hero">
+  <h2>Settings</h2>
+  <p>Local paths, OCR, optional Ollama, and import defaults.</p>
+</div>
+<form class="card" method="post">
+  <input type="hidden" name="action" value="save"/>
+  <div class="form-grid">
+    <div><label>Database path</label><input type="text" name="database_path" value="{{ settings.database_path }}"/></div>
+    <div><label>Default PDF import folder</label><input type="text" name="pdf_import_folder" value="{{ settings.pdf_import_folder }}"/></div>
+    <div><label>Your VAT / ΑΦΜ (helps sales vs purchase)</label><input type="text" name="own_vat" value="{{ settings.get('own_vat','') }}"/></div>
+    <div><label>OCR executable</label><input type="text" name="ocr_executable" value="{{ settings.ocr_executable }}"/></div>
+    <div><label>OCR languages</label><input type="text" name="ocr_languages" value="{{ settings.ocr_languages }}"/></div>
+    <div><label>Default currency</label><input type="text" name="default_currency" value="{{ settings.default_currency }}"/></div>
+    <div><label>Rounding tolerance</label><input type="text" name="rounding_tolerance" value="{{ settings.rounding_tolerance }}"/></div>
+    <div><label>Default reporting period (days)</label><input type="number" name="default_reporting_period_days" value="{{ settings.default_reporting_period_days }}"/></div>
+    <div><label>Low confidence threshold</label><input type="number" step="0.05" min="0" max="1" name="low_confidence_threshold" value="{{ settings.low_confidence_threshold }}"/></div>
+    <div><label>Min text chars before OCR</label><input type="number" name="ocr_min_text_chars" value="{{ settings.ocr_min_text_chars }}"/></div>
+  </div>
+  <label style="margin-top:0.85rem">
+    <input type="checkbox" name="imports_are_paid" {% if settings.get('imports_are_paid', true) %}checked{% endif %}/>
+    Imported PDFs are paid (create confirmed payment for full amount)
+  </label>
+  <h3 style="margin-top:1rem">Optional LLM</h3>
+  <label><input type="checkbox" name="ollama_enabled" {% if settings.ollama_enabled %}checked{% endif %}/> Enable Ollama extraction</label>
+  <div class="form-grid" style="margin-top:0.5rem">
+    <div><label>Ollama endpoint</label><input type="text" name="ollama_endpoint" value="{{ settings.ollama_endpoint }}"/></div>
+    <div><label>Model</label><input type="text" name="ollama_model" value="{{ settings.ollama_model }}"/></div>
+  </div>
+  <div class="btn-row"><button class="btn" type="submit">Save settings</button></div>
+</form>
+
+<div class="card">
+  <h3>Import payments (CSV)</h3>
+  <p class="muted">Optional override. Columns: invoice_number, amount, date, method</p>
+  <form method="post" enctype="multipart/form-data">
+    <input type="hidden" name="action" value="import_payments"/>
+    <input type="file" name="payments_csv" accept=".csv"/>
+    <div class="btn-row"><button class="btn secondary" type="submit">Import CSV</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <h3>Backup</h3>
+  <form method="post"><input type="hidden" name="action" value="backup"/><button class="btn secondary" type="submit">Backup database</button></form>
+</div>
+{% endblock %}

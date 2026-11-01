@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Import — Invoice Intelligence{% endblock %}
+{% block content %}
+<div class="hero">
+  <h2>Import invoices</h2>
+  <p>Scan a PDF folder, extract fields, and stage drafts for review. By default, already-imported files are skipped.</p>
+</div>
+<form class="card" method="post">
+  <label>PDF folder path</label>
+  <input type="text" name="folder" value="{{ folder }}" placeholder="/path/to/invoices"/>
+  <label style="margin-top:0.6rem"><input type="checkbox" name="recursive" checked/> Scan subfolders</label>
+  <label style="margin-top:0.6rem">
+    <input type="checkbox" name="overwrite_existing" {% if overwrite_existing %}checked{% endif %}/>
+    Overwrite existing documents
+  </label>
+  <p class="muted" style="margin:0.35rem 0 0">
+    When enabled, matching invoices (same PDF hash, path, or filename) are re-extracted and replaced.
+    Status resets to <strong>draft</strong> for review; recorded payments are kept.
+  </p>
+  <div class="btn-row">
+    <button class="btn secondary" type="submit" name="action" value="scan">Scan folder</button>
+    <button class="btn" type="submit" name="action" value="process">Process detected PDFs</button>
+  </div>
+</form>
+{% if scanned_rows %}
+<div class="card">
+  <h3>Detected ({{ scanned_rows|length }})</h3>
+  <table>
+    <thead><tr><th>File</th><th>Size KB</th><th>Hash</th></tr></thead>
+    <tbody>
+      {% for r in scanned_rows %}
+      <tr><td>{{ r.filename }}</td><td>{{ r.size_kb }}</td><td>{{ r.hash }}…</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% if results %}
+<div class="card">
+  <h3>Results</h3>
+  <table>
+    <thead><tr><th>File</th><th>Status</th><th>Detail</th><th></th></tr></thead>
+    <tbody>
+      {% for r in results %}
+      <tr>
+        <td>{{ r.file }}</td>
+        <td>{{ r.status }}</td>
+        <td>{{ r.detail }}</td>
+        <td>{% if r.invoice_id %}<a href="{{ url_for('review', invoice_id=r.invoice_id) }}">Review</a>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

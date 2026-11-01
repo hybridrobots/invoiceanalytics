@@ -1,0 +1,65 @@
+How to push Invoice Analytics to GitHub
+======================================
+
+Repo (already created):
+  https://github.com/hybridrobots/invoiceanalytics
+
+Run these commands from the project folder:
+
+  /home/pilgrim/Downloads/DATA0/VibeCodedApps/InvoiceAnalytics
+
+
+1) Go to the project directory
+------------------------------
+  cd /home/pilgrim/Downloads/DATA0/VibeCodedApps/InvoiceAnalytics
+
+
+2) Initialize git (only if this folder is not a git repo yet)
+------------------------------------------------------------
+  git init
+  git branch -M main
+
+
+3) Add the GitHub remote
+------------------------
+  git remote add origin https://github.com/hybridrobots/invoiceanalytics.git
+
+  If origin already exists and points somewhere else:
+  git remote set-url origin https://github.com/hybridrobots/invoiceanalytics.git
+
+
+4) Stage and commit
+-------------------
+  git add .
+  git status
+  git commit -m "Initial commit: Invoice Intelligence app"
+
+
+5) Push to GitHub
+-----------------
+  git push -u origin main
+
+  If GitHub asks you to sign in, use a Personal Access Token as the
+  password (not your GitHub account password), or use SSH instead:
+
+
+  SSH alternative
+  ---------------
+  git remote set-url origin git@github.com:hybridrobots/invoiceanalytics.git
+  git push -u origin main
+
+
+Notes
+-----
+- data/, exports/, and .venv/ are ignored by .gitignore and should NOT
+  be uploaded (keeps personal invoice data off GitHub).
+- If the remote repo already has a README/LICENSE and push is rejected,
+  either pull first:
+
+    git pull origin main --allow-unrelated-histories
+
+  then push again, or force only if you intend to overwrite the remote:
+
+    git push -u origin main --force
+
+  Prefer the pull approach unless you are sure.

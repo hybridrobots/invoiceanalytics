@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+.DS_Store
+
+# Local runtime data (never publish invoices / settings / scans)
+data/*
+!data/.gitkeep
+exports/*
+!exports/.gitkeep
+invoice_intelligence/exports/*
+!invoice_intelligence/exports/.gitkeep
